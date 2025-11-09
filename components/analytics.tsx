@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import {
   LineChart,
   Line,
@@ -14,27 +14,53 @@ import {
   ResponsiveContainer,
 } from "recharts"
 import { Button } from "@/components/ui/button"
-
-const crimeData = [
-  { date: "Mon", total: 124, predicted: 98, theft: 45, robbery: 23, assault: 20 },
-  { date: "Tue", total: 138, predicted: 110, theft: 52, robbery: 28, assault: 18 },
-  { date: "Wed", total: 145, predicted: 135, theft: 58, robbery: 32, assault: 22 },
-  { date: "Thu", total: 156, predicted: 148, theft: 62, robbery: 35, assault: 25 },
-  { date: "Fri", total: 189, predicted: 175, theft: 75, robbery: 42, assault: 30 },
-  { date: "Sat", total: 203, predicted: 198, theft: 82, robbery: 48, assault: 35 },
-  { date: "Sun", total: 167, predicted: 152, theft: 68, robbery: 38, assault: 28 },
-]
-
-const dataTable = [
-  { id: "C001", type: "Robbery", location: "MG Road", time: "10:30 AM", risk: "Critical", date: "Nov 5" },
-  { id: "C002", type: "Theft", location: "Brigade Road", time: "2:15 PM", risk: "High", date: "Nov 5" },
-  { id: "C003", type: "Assault", location: "Rajpur Rd", time: "6:45 PM", risk: "High", date: "Nov 4" },
-  { id: "C004", type: "Burglary", location: "Whitefield", time: "11:20 PM", risk: "Medium", date: "Nov 4" },
-  { id: "C005", type: "Pickpocket", location: "Mall Road", time: "3:50 PM", risk: "Low", date: "Nov 3" },
-]
+import { generateHistoricalCrimeData, analyzeTimePatterns } from "@/lib/crime-data"
+import { predictCrimeHotspots, analyzeDayPatterns } from "@/lib/predictive-analytics"
 
 export default function Analytics() {
   const [timeFilter, setTimeFilter] = useState("week")
+
+  // Generate real crime data
+  const crimeData = useMemo(() => generateHistoricalCrimeData(30), [])
+  const predictions = useMemo(() => predictCrimeHotspots(crimeData, 24), [])
+  const dayPatterns = useMemo(() => analyzeDayPatterns(crimeData), [crimeData])
+
+  // Aggregate data by day for charts
+  const chartData = useMemo(() => {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    const aggregated = days.map((day, idx) => {
+      const dayCrimes = crimeData.filter(c => c.timestamp.getDay() === idx)
+      const crimeTypes: { [key: string]: number } = {}
+      dayCrimes.forEach(c => {
+        crimeTypes[c.type] = (crimeTypes[c.type] || 0) + 1
+      })
+      
+      const dayPrediction = dayPatterns.find(p => p.day === days[idx])
+      const predicted = dayPrediction ? Math.round(dayPrediction.count * 0.85) : 0
+
+      return {
+        date: day,
+        total: dayCrimes.length,
+        predicted,
+        theft: crimeTypes['Theft'] || 0,
+        robbery: crimeTypes['Robbery'] || 0,
+        assault: crimeTypes['Assault'] || 0,
+      }
+    })
+    return aggregated
+  }, [crimeData, dayPatterns])
+
+  // Recent crime records for table
+  const dataTable = useMemo(() => {
+    return crimeData.slice(0, 10).map(crime => ({
+      id: crime.id,
+      type: crime.type,
+      location: crime.location,
+      time: crime.timestamp.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      risk: crime.severity.charAt(0).toUpperCase() + crime.severity.slice(1),
+      date: crime.timestamp.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    }))
+  }, [crimeData])
 
   return (
     <div className="p-6 space-y-6">
@@ -58,7 +84,7 @@ export default function Analytics() {
         <div className="glow-card rounded-lg p-6 bg-card/50">
           <h3 className="text-lg font-semibold mb-4 text-foreground">Crime Trend</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={crimeData}>
+            <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.18 0 0)" />
               <XAxis dataKey="date" stroke="oklch(0.65 0 0)" />
               <YAxis stroke="oklch(0.65 0 0)" />
@@ -81,7 +107,7 @@ export default function Analytics() {
         <div className="glow-card rounded-lg p-6 bg-card/50">
           <h3 className="text-lg font-semibold mb-4 text-foreground">Crime by Type</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={crimeData}>
+            <BarChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.18 0 0)" />
               <XAxis dataKey="date" stroke="oklch(0.65 0 0)" />
               <YAxis stroke="oklch(0.65 0 0)" />
